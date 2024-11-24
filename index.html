@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Дэлхийн Соронзон Талбарын Симуляци</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            display: block;
+        }
+        .container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        .input-group input {
+            padding: 5px;
+            font-size: 1em;
+        }
+        .credits {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="input-group">
+            <label for="latitude">Өргөрөг (φ градусаар):</label>
+            <input type="number" id="latitude" placeholder="Өргөргийг оруулна уу" value="0">
+        </div>
+        <div class="input-group">
+            <label for="inclination">Соронзон хазайлтын өнцөг (i градусаар):</label>
+            <input type="number" id="inclination" placeholder="Хазайлтын өнцөг оруулна уу" value="30">
+        </div>
+        <div class="input-group">
+            <label for="fieldStrength">Соронзон талбарын хүч (Bx гаусс):</label>
+            <input type="number" id="fieldStrength" placeholder="Соронзон талбарын хүч оруулна уу" value="0.32">
+        </div>
+        <button onclick="calculateMagneticField()">Тооцоолох</button>
+        <div id="result"></div>
+    </div>
+
+    <div class="credits">
+        <strong>Эх сурвалж:</strong> Дэлхийн текстур <a href="https://github.com/mrdoob/three.js/tree/master/examples/textures/planets" target="_blank" style="color: lightblue;">Three.js Textures</a>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        let scene, camera, renderer, controls, earth;
+
+        // Initialize the 3D scene
+        function initScene() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            camera.position.set(0, 5, 15); // Bring the camera closer to the Earth
+        }
+
+        // Add lighting
+        function createLighting() {
+            const ambientLight = new THREE.AmbientLight(0x404040, 1.8);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xfff0dd, 1);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+        }
+
+        // Create a realistic Earth model
+        function createRealEarth() {
+            const earthGeometry = new THREE.SphereGeometry(5, 64, 64); // Increase Earth size
+            const earthMaterial = new THREE.MeshPhongMaterial({
+                map: new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_atmos_2048.jpg'),
+                bumpMap: new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_bump_2048.jpg'),
+                bumpScale: 0.05,
+                specularMap: new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_specular_2048.jpg'),
+                specular: new THREE.Color('grey')
+            });
+            earth = new THREE.Mesh(earthGeometry, earthMaterial);
+            scene.add(earth);
+        }
+
+        // Add a galaxy background
+        function createGalaxyBackground() {
+            const galaxyGeometry = new THREE.SphereGeometry(500, 64, 64);
+            const galaxyTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/galaxy_starfield.png');
+            const galaxyMaterial = new THREE.MeshBasicMaterial({ map: galaxyTexture, side: THREE.BackSide });
+            const galaxyBackground = new THREE.Mesh(galaxyGeometry, galaxyMaterial);
+            scene.add(galaxyBackground);
+        }
+
+        // Calculate the magnetic field
+        function calculateMagneticField() {
+            const latitude = parseFloat(document.getElementById('latitude').value);
+            const inclination = parseFloat(document.getElementById('inclination').value);
+            const fieldStrength = parseFloat(document.getElementById('fieldStrength').value);
+
+            const Bx = fieldStrength * Math.cos(Math.toRadians(inclination));
+            const Z = fieldStrength * Math.sin(Math.toRadians(inclination));
+
+            const resultText = `
+                <strong>Хэвтээ Соронзон Талбар (Bx):</strong> ${Bx.toFixed(2)} Гаусс<br>
+                <strong>Босоо Компонент (Z):</strong> ${Z.toFixed(2)} Гаусс
+            `;
+            document.getElementById('result').innerHTML = resultText;
+
+            // Draw magnetic field lines
+            drawMagneticFieldLines(latitude, inclination);
+        }
+
+        // Convert degrees to radians
+        Math.toRadians = function(degrees) {
+            return degrees * Math.PI / 180;
+        };
+
+        // Draw magnetic field lines around the Earth
+        function drawMagneticFieldLines(latitude, inclination) {
+            const magneticFieldMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+            const points = [];
+
+            const radius = 5; // Adjust radius to match the Earth's larger size
+            for (let i = 0; i <= 10; i++) {
+                const angle = (i / 10) * Math.PI * 2;
+                points.push(new THREE.Vector3(Math.cos(angle) * radius, Math.sin(Math.toRadians(latitude)) * radius, Math.sin(angle) * radius));
+            }
+
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geometry, magneticFieldMaterial);
+            scene.add(line);
+        }
+
+        // Animate the scene
+        function animate() {
+            requestAnimationFrame(animate);
+            earth.rotation.y += 0.001; // Rotate Earth
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Initialize everything
+        function init() {
+            initScene();
+            createLighting();
+            createRealEarth();
+            createGalaxyBackground();
+            animate();
+        }
+
+        window.onload = init;
+    </script>
+
+</body>
+</html>
